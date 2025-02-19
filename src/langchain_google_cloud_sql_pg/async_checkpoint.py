@@ -36,38 +36,6 @@ from .engine import CHECKPOINTS_TABLE, PostgresEngine
 
 MetadataInput = Optional[dict[str, Any]]
 
-# Select SQL used in `alist` method
-SELECT = f"""
-select
-    thread_id,
-    checkpoint,
-    checkpoint_ns,
-    checkpoint_id,
-    parent_checkpoint_id,
-    metadata,
-    (
-        select array_agg(array[bl.channel::bytea, bl.type::bytea, bl.blob])
-        from jsonb_each_text(checkpoint -> 'channel_versions')
-    ) as channel_values,
-    (
-        select
-        array_agg(array[cw.task_id::text::bytea, cw.channel::bytea, cw.type::bytea, cw.blob] order by cw.task_id, cw.idx)
-        from checkpoint_writes cw
-        where cw.thread_id = checkpoints.thread_id
-            and cw.checkpoint_ns = checkpoints.checkpoint_ns
-            and cw.checkpoint_id = checkpoints.checkpoint_id
-    ) as pending_writes,
-    (
-        select array_agg(array[cw.type::bytea, cw.blob] order by cw.task_path, cw.task_id, cw.idx)
-        from checkpoint_writes cw
-        where cw.thread_id = checkpoints.thread_id
-            and cw.checkpoint_ns = checkpoints.checkpoint_ns
-            and cw.checkpoint_id = checkpoints.parent_checkpoint_id
-            and cw.channel = '{TASKS}'
-    ) as pending_sends
-from checkpoints
-"""
-
 
 class AsyncPostgresSaver(BaseCheckpointSaver[str]):
     """Checkpoint stored in an PostgreSQL database."""
@@ -270,7 +238,7 @@ class AsyncPostgresSaver(BaseCheckpointSaver[str]):
         config: Optional[RunnableConfig],
         filter: MetadataInput,
         before: Optional[RunnableConfig] = None,
-    ) -> tuple[str, list[Any]]:
+    ) -> tuple[str, dict[Any]]:
         """Return WHERE clause predicates for alist() given config, filter, before.
 
         This method returns a tuple of a string and a tuple of values. The string
@@ -279,30 +247,30 @@ class AsyncPostgresSaver(BaseCheckpointSaver[str]):
         values for each of the corresponding parameters.
         """
         wheres = []
-        param_values = []
+        param_values = {}
 
         # construct predicate for config filter
         if config:
-            wheres.append("thread_id = %s ")
-            param_values.append(config["configurable"]["thread_id"])
+            wheres.append("thread_id = :thread_id")
+            param_values.update({"thread_id": config["configurable"]["thread_id"]})
             checkpoint_ns = config["configurable"].get("checkpoint_ns")
             if checkpoint_ns is not None:
-                wheres.append("checkpoint_ns = %s")
-                param_values.append(checkpoint_ns)
+                wheres.append("checkpoint_ns = :checkpoint_ns")
+                param_values.update({"checkpoint_ns": checkpoint_ns})
 
             if checkpoint_id := get_checkpoint_id(config):
-                wheres.append("checkpoint_id = %s ")
-                param_values.append(checkpoint_id)
+                wheres.append("checkpoint_id = :checkpoint_id")
+                param_values.update({"checkpoint_id": checkpoint_id})
 
         # construct predicate for metadata filter
         if filter:
-            wheres.append("metadata @> %s ")
-            param_values.append(json.dumps(filter))
+            wheres.append("metadata @> :metadata")
+            param_values.update({"metadata": json.dumps(filter)})
 
         # construct predicate for `before`
         if before is not None:
-            wheres.append("checkpoint_id < %s ")
-            param_values.append(get_checkpoint_id(before))
+            wheres.append("checkpoint_id < :checkpoint_id")
+            param_values.update({"checkpoint_id": get_checkpoint_id(before)})
 
         return (
             "WHERE " + " AND ".join(wheres) if wheres else "",
@@ -431,6 +399,32 @@ class AsyncPostgresSaver(BaseCheckpointSaver[str]):
         Returns:
             AsyncIterator[CheckpointTuple]: Async iterator of matching checkpoint tuples.
         """
+        # Select SQL used in `alist` method
+        SELECT = f"""
+                SELECT
+                    thread_id,
+                    checkpoint,
+                    checkpoint_ns,
+                    checkpoint_id,
+                    parent_checkpoint_id,
+                    metadata,
+                    (
+                        SELECT array_agg(array[cw.task_id::text::bytea, cw.channel::bytea, cw.type::bytea, cw.blob] order by cw.task_id, cw.idx)
+                        FROM "{self.schema_name}"."{self.table_name_writes}" cw
+                        where cw.thread_id = c.thread_id
+                            AND cw.checkpoint_ns = c.checkpoint_ns
+                            AND cw.checkpoint_id = c.checkpoint_id
+                    ) AS pending_writes,
+                    (
+                        SELECT array_agg(array[cw.type::bytea, cw.blob] order by cw.task_path, cw.task_id, cw.idx)
+                        FROM "{self.schema_name}"."{self.table_name_writes}" cw
+                        WHERE cw.thread_id = c.thread_id
+                            AND cw.checkpoint_ns = c.checkpoint_ns
+                            AND cw.checkpoint_id = c.parent_checkpoint_id
+                            AND cw.channel = '{TASKS}'
+                    ) AS pending_sends
+                FROM "{self.schema_name}"."{self.table_name}" c
+                """
 
         where, args = self._search_where(config, filter, before)
         query = SELECT + where + " ORDER BY checkpoint_id DESC"
