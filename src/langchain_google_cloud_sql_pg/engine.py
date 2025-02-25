@@ -796,7 +796,7 @@ class PostgresEngine:
     async def ainit_checkpoint_table(
         self, table_name: str = CHECKPOINTS_TABLE, schema_name: str = "public"
     ) -> None:
-        """Create an AlloyDB table to save checkpoint messages.
+        """Create an PgSQL table to save checkpoint messages.
 
         Args:
             schema_name (str): The schema name to store checkpoint tables.
