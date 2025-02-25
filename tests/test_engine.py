@@ -28,10 +28,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from langchain_google_cloud_sql_pg import Column, PostgresEngine
-from langchain_google_cloud_sql_pg.engine import (
-    CHECKPOINT_WRITES_TABLE,
-    CHECKPOINTS_TABLE,
-)
 
 DEFAULT_TABLE = "test_table" + str(uuid.uuid4()).replace("-", "_")
 CUSTOM_TABLE = "test_table_custom" + str(uuid.uuid4()).replace("-", "_")
@@ -309,7 +305,7 @@ class TestEngineAsync:
         table_name = f"checkpoint{uuid.uuid4()}"
         table_name_writes = f"{table_name}_writes"
         await engine.ainit_checkpoint_table(table_name=table_name)
-        stmt = f'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = "{table_name_writes}";'
+        stmt = f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name_writes}';"
         results = await afetch(engine, stmt)
         expected = [
             {"column_name": "thread_id", "data_type": "text"},
@@ -320,18 +316,19 @@ class TestEngineAsync:
             {"column_name": "channel", "data_type": "text"},
             {"column_name": "type", "data_type": "text"},
             {"column_name": "blob", "data_type": "bytea"},
+            {"column_name": "task_path", "data_type": "text"},
         ]
         for row in results:
             assert row in expected
-        stmt = f'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = "{table_name}";'
+        stmt = f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}';"
         results = await afetch(engine, stmt)
         expected = [
             {"column_name": "thread_id", "data_type": "text"},
             {"column_name": "checkpoint_ns", "data_type": "text"},
             {"column_name": "checkpoint_id", "data_type": "text"},
             {"column_name": "parent_checkpoint_id", "data_type": "text"},
-            {"column_name": "checkpoint", "data_type": "jsonb"},
-            {"column_name": "metadata", "data_type": "jsonb"},
+            {"column_name": "checkpoint", "data_type": "bytea"},
+            {"column_name": "metadata", "data_type": "bytea"},
             {"column_name": "type", "data_type": "text"},
         ]
         for row in results:
@@ -494,7 +491,7 @@ class TestEngineSync:
         table_name = f"checkpoint{uuid.uuid4()}"
         table_name_writes = f"{table_name}_writes"
         engine.init_checkpoint_table(table_name=table_name)
-        stmt = f'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = "{table_name}";'
+        stmt = f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}';"
         results = await afetch(engine, stmt)
         expected = [
             {"column_name": "thread_id", "data_type": "text"},
@@ -502,12 +499,12 @@ class TestEngineSync:
             {"column_name": "checkpoint_id", "data_type": "text"},
             {"column_name": "parent_checkpoint_id", "data_type": "text"},
             {"column_name": "type", "data_type": "text"},
-            {"column_name": "checkpoint", "data_type": "jsonb"},
-            {"column_name": "metadata", "data_type": "jsonb"},
+            {"column_name": "checkpoint", "data_type": "bytea"},
+            {"column_name": "metadata", "data_type": "bytea"},
         ]
         for row in results:
             assert row in expected
-        stmt = f'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = "{table_name_writes}";'
+        stmt = f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name_writes}';"
         results = await afetch(engine, stmt)
         expected = [
             {"column_name": "thread_id", "data_type": "text"},
@@ -518,6 +515,7 @@ class TestEngineSync:
             {"column_name": "channel", "data_type": "text"},
             {"column_name": "type", "data_type": "text"},
             {"column_name": "blob", "data_type": "bytea"},
+            {"column_name": "task_path", "data_type": "text"},
         ]
         for row in results:
             assert row in expected

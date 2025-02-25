@@ -40,7 +40,6 @@ T = TypeVar("T")
 USER_AGENT = "langchain-google-cloud-sql-pg-python/" + __version__
 
 CHECKPOINTS_TABLE = "checkpoints"
-CHECKPOINT_WRITES_TABLE = "checkpoint_writes"
 
 
 async def _get_iam_principal_email(
@@ -771,8 +770,8 @@ class PostgresEngine:
             checkpoint_id TEXT NOT NULL,
             parent_checkpoint_id TEXT,
             type TEXT,
-            checkpoint JSONB NOT NULL,
-            metadata JSONB NOT NULL DEFAULT '{{}}',
+            checkpoint BYTEA,
+            metadata BYTEA,
             PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
         );"""
 
@@ -785,6 +784,7 @@ class PostgresEngine:
             channel TEXT NOT NULL,
             type TEXT,
             blob BYTEA NOT NULL,
+            task_path TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
         );"""
 
